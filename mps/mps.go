@@ -3,7 +3,6 @@ package mps
 
 import (
 	"fmt"
-	"math"
 	"math/cmplx"
 	"math/rand/v2"
 	"slices"
@@ -216,7 +215,7 @@ type SearchGroundStateOptions struct {
 
 func NewSearchGroundStateOptions() SearchGroundStateOptions {
 	opt := SearchGroundStateOptions{}
-	opt.maxIterations = math.MaxInt
+	opt.maxIterations = 32
 	opt.tol = 1e-6
 	return opt
 }

@@ -1,4 +1,4 @@
-package qising
+package exactdiag
 
 import (
 	"cmp"
@@ -13,7 +13,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"qising/mat"
+	"qising/exactdiag/mat"
 )
 
 var (

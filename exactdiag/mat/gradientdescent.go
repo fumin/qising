@@ -10,7 +10,7 @@ import (
 	"slices"
 	"time"
 
-	"qising/util"
+	"qising/exactdiag/mat/util"
 )
 
 func GradientDescent(m *COO) (float32, []complex64) {

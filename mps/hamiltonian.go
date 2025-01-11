@@ -1,7 +1,7 @@
 package mps
 
 import (
-	"qising/mat"
+	"qising/exactdiag/mat"
 	"qising/tensor"
 )
 

@@ -15,8 +15,8 @@ import (
 
 	"github.com/pkg/errors"
 
-	"qising"
-	"qising/mat"
+	"qising/exactdiag"
+	"qising/exactdiag/mat"
 )
 
 const (
@@ -32,7 +32,7 @@ var (
 type Statistics struct {
 	n [2]int
 	h complex64
-	qising.Statistics
+	exactdiag.Statistics
 }
 
 func getStatistics(dir string, n [2]int) error {
@@ -41,7 +41,7 @@ func getStatistics(dir string, n [2]int) error {
 		return errors.Wrap(err, "")
 	}
 
-	stats, err := qising.GetStatistics(n, vvs)
+	stats, err := exactdiag.GetStatistics(n, vvs)
 	if err != nil {
 		return errors.Wrap(err, "")
 	}
@@ -64,7 +64,7 @@ func solveGround(dir string, n [2]int, h complex64) error {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	qising.TransverseFieldIsingExplicit(tmpDir, n, h)
+	exactdiag.TransverseFieldIsingExplicit(tmpDir, n, h)
 	vv := mat.EigsDir(tmpDir)
 
 	if err := writeEig(dir, vv); err != nil {

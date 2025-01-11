@@ -1,4 +1,4 @@
-package qising
+package exactdiag
 
 import (
 	"flag"
@@ -9,7 +9,7 @@ import (
 	"os"
 	"testing"
 
-	"qising/mat"
+	"qising/exactdiag/mat"
 )
 
 func TestTransverseFieldIsing(t *testing.T) {
