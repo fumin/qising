@@ -9,7 +9,7 @@ import (
 	"slices"
 	"testing"
 
-	"qising/tensor"
+	"github.com/fumin/tensor"
 )
 
 func TestNewMPS(t *testing.T) {
@@ -43,9 +43,9 @@ func TestNewMPS(t *testing.T) {
 	for i, test := range tests {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			t.Parallel()
-			bufs := make([]*tensor.Dense, 0)
-			for _ = range 2 {
-				bufs = append(bufs, tensor.Zeros(1))
+			var bufs [2]*tensor.Dense
+			for i := range len(bufs) {
+				bufs[i] = tensor.Zeros(1)
 			}
 			state := resetCopy(tensor.Zeros(1), test.state)
 
@@ -75,7 +75,7 @@ func TestNewMPS(t *testing.T) {
 				{mpsUpAxis, mpsUpAxis},
 			}
 			for _, m := range mps[:len(mps)-1] {
-				mm := tensor.Contract(bufs[0], m.Conj(), m, axes)
+				mm := tensor.Product(bufs[0], m.Conj(), m, axes)
 				eye := bufs[1].Eye(mm.Shape()[0], 0)
 				if err := mm.Equal(eye, 10*epsilon); err != nil {
 					t.Fatalf("%+v", err)
@@ -214,9 +214,9 @@ func TestExpectation(t *testing.T) {
 	for i, test := range tests {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			t.Parallel()
-			bufs := make([]*tensor.Dense, 0)
-			for _ = range 2 {
-				bufs = append(bufs, tensor.Zeros(1))
+			var bufs [2]*tensor.Dense
+			for i := range len(bufs) {
+				bufs[i] = tensor.Zeros(1)
 			}
 			mps := NewMPS(test.state, bufs)
 
@@ -384,9 +384,9 @@ func TestSearchGroundState(t *testing.T) {
 			for _ = range test.h {
 				fs = append(fs, tensor.Zeros(1))
 			}
-			bufs := make([]*tensor.Dense, 0)
-			for _ = range 10 {
-				bufs = append(bufs, tensor.Zeros(1))
+			var bufs [10]*tensor.Dense
+			for i := range len(bufs) {
+				bufs[i] = tensor.Zeros(1)
 			}
 
 			const bondDim = 8
@@ -394,14 +394,15 @@ func TestSearchGroundState(t *testing.T) {
 			if err := SearchGroundState(fs, test.h, mps, bufs); err != nil {
 				t.Fatalf("%+v", err)
 			}
-			psiIP := InnerProduct(mps, mps, bufs)
+			bufs2 := [2]*tensor.Dense(bufs[:2])
+			psiIP := InnerProduct(mps, mps, bufs2)
 
-			e0 := LExpressions(fs, test.h, mps, bufs) / psiIP
+			e0 := LExpressions(fs, test.h, mps, bufs2) / psiIP
 			if diff := abs(e0 - test.e0); diff > test.tol*max(abs(test.e0), 1) {
 				t.Fatalf("%f %f %f", diff, e0, test.e0)
 			}
 
-			m2 := H2(test.mz, mps, bufs) / psiIP
+			m2 := H2(test.mz, mps, bufs2) / psiIP
 			m := sqrt(m2) / complex(float32(len(mps)), 0) // per spin
 			if diff := abs(m - test.m); diff > test.tol*max(abs(test.m), 1) {
 				t.Fatalf("%f %f %f", diff, m, test.m)
@@ -486,7 +487,7 @@ func TestNormlize(t *testing.T) {
 				sites = test.mps[1:]
 			}
 			for i, b := range sites {
-				bb := tensor.Contract(tensor.Zeros(1), b.Conj(), b, axes)
+				bb := tensor.Product(tensor.Zeros(1), b.Conj(), b, axes)
 				eye := tensor.Zeros(1).Eye(bb.Shape()[0], 0)
 				if err := bb.Equal(eye, 10*epsilon); err != nil {
 					t.Fatalf("%d %+v", i, err)
@@ -515,9 +516,9 @@ func TestLQ(t *testing.T) {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			t.Parallel()
 			a := resetCopy(tensor.Zeros(1), test.a)
-			bufs := make([]*tensor.Dense, 0)
-			for _ = range 2 {
-				bufs = append(bufs, tensor.Zeros(1))
+			var bufs [2]*tensor.Dense
+			for i := range len(bufs) {
+				bufs[i] = tensor.Zeros(1)
 			}
 			q := tensor.Zeros(1)
 			l := lq(q, test.a, bufs)

@@ -10,10 +10,9 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/fumin/qising/mps"
+	"github.com/fumin/tensor"
 	"github.com/pkg/errors"
-
-	"qising/mps"
-	"qising/tensor"
 )
 
 var (
@@ -94,15 +93,15 @@ func solve(cfg Config) (Statistics, error) {
 	// Search for ground state.
 	state := mps.RandMPS(h, cfg.bondDim)
 	opt := mps.NewSearchGroundStateOptions().Tol(cfg.tol)
-	if err := mps.SearchGroundState(fs, h, state, bufs, opt); err != nil {
+	if err := mps.SearchGroundState(fs, h, state, [10]*tensor.Dense(bufs), opt); err != nil {
 		return Statistics{}, errors.Wrap(err, "")
 	}
 
 	// Calculate statistics.
-	psiIP := mps.InnerProduct(state, state, bufs)
-	e0 := mps.LExpressions(fs, h, state, bufs) / psiIP
+	psiIP := mps.InnerProduct(state, state, [2]*tensor.Dense(bufs))
+	e0 := mps.LExpressions(fs, h, state, [2]*tensor.Dense(bufs)) / psiIP
 	// Calculate magnetization.
-	m2 := mps.H2(mz, state, bufs) / psiIP
+	m2 := mps.H2(mz, state, [2]*tensor.Dense(bufs)) / psiIP
 	m := sqrt(m2) / complex(float32(len(state)), 0) // per spin
 
 	return Statistics{cfg: cfg, e0: real(e0), m: real(m)}, nil

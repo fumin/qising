@@ -9,7 +9,7 @@ import (
 	"os"
 	"testing"
 
-	"qising/exactdiag/mat"
+	"github.com/fumin/qising/exactdiag/mat"
 )
 
 func TestTransverseFieldIsing(t *testing.T) {

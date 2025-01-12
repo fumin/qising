@@ -1,8 +1,7 @@
 package mps
 
 import (
-	"qising/exactdiag/mat"
-	"qising/tensor"
+	"github.com/fumin/tensor"
 )
 
 var (
@@ -14,24 +13,42 @@ var (
 		{1, 0},
 		{0, 1},
 	}
+	pauliX = [][]complex64{
+		{0, 1},
+		{1, 0},
+	}
+	pauliY = [][]complex64{
+		{0, -1i},
+		{1i, 0},
+	}
+	pauliZ = [][]complex64{
+		{1, 0},
+		{0, -1},
+	}
 )
 
+// MagnetizationZ returns the MPO hamiltonian of the Z axis magnetization.
+// The shape of the lattice is specified by n.
 func MagnetizationZ(n [2]int) []*tensor.Dense {
 	w := tensor.T4([][][][]complex64{
 		{identity, zero},
-		{mat.PauliZ, identity},
+		{pauliZ, identity},
 	})
 	return newMPO(w, n)
 }
 
+// Ising returns the MPO hamiltonian of the [Transverse Field Ising Model].
+// n is the shape of the lattic, and h is the field strength.
+//
+// [Transverse Field Ising Model]: https://en.wikipedia.org/wiki/Transverse-field_Ising_model
 func Ising(n [2]int, h complex64) []*tensor.Dense {
 	mul := func(c complex64, x [][]complex64) [][]complex64 {
 		return tensor.T2(x).Mul(c).ToSlice2()
 	}
 	w := tensor.T4([][][][]complex64{
 		{identity, zero, zero},
-		{mat.PauliZ, zero, zero},
-		{mul(-h, mat.PauliX), mul(-1, mat.PauliZ), identity},
+		{pauliZ, zero, zero},
+		{mul(-h, pauliX), mul(-1, pauliZ), identity},
 	})
 	return newMPO(w, n)
 }

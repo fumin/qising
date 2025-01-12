@@ -1,4 +1,7 @@
-// Why we need to normalize: Eq. 211, page 66
+// Package mps implements the Matrix Product State algorithm.
+//
+// References:
+//   - The density-matrix renormalization group in the age of matrix product states, Ulrich Schollwock
 package mps
 
 import (
@@ -9,8 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"qising/tensor"
-
+	"github.com/fumin/tensor"
 	"github.com/pkg/errors"
 )
 
@@ -29,8 +31,8 @@ const (
 	epsilon = 0x1p-23
 )
 
-// NewMPS create a matrix product representation of a general state.
-func NewMPS(state *tensor.Dense, bufs []*tensor.Dense) []*tensor.Dense {
+// NewMPS create a matrix product representation from a general state.
+func NewMPS(state *tensor.Dense, bufs [2]*tensor.Dense) []*tensor.Dense {
 	shape := state.Shape()
 
 	sites := make([]*tensor.Dense, 0, len(shape))
@@ -52,8 +54,7 @@ func NewMPS(state *tensor.Dense, bufs []*tensor.Dense) []*tensor.Dense {
 }
 
 // RandMPS creates a random matrix product state.
-// d is D below equation 71 in section 4.1.4.
-// Consult Figure 37 for details.
+// maxD is the maximum bond dimension, which is D in the discussion below equation 71 in section 4.1.4, Ulrich Schollwock.
 func RandMPS(mpo []*tensor.Dense, maxD int) []*tensor.Dense {
 	sites := make([]*tensor.Dense, 0, len(mpo))
 
@@ -89,19 +90,20 @@ func RandMPS(mpo []*tensor.Dense, maxD int) []*tensor.Dense {
 	return sites
 }
 
-func InnerProduct(x, y []*tensor.Dense, bufs []*tensor.Dense) complex64 {
+// InnerProduct computes the inner product between x and y.
+// See Section 4.2.1 Efficient evaluation of contractions, Ulrich Schollwock.
+func InnerProduct(x, y []*tensor.Dense, bufs [2]*tensor.Dense) complex64 {
 	if len(x) != len(y) {
 		panic(fmt.Sprintf("%d %d", len(x), len(y)))
 	}
 
 	f := ones(bufs[0], 1, 1)
 	const fTopAxis, fBottomAxis = 0, 1
-	bufs = bufs[1:]
 	for i, xi := range x {
 		yi := y[i]
 
-		fyi := tensor.Contract(bufs[0], f, yi, [][2]int{{fBottomAxis, mpsLeftAxis}})
-		tensor.Contract(f, xi.Conj(), fyi, [][2]int{{mpsLeftAxis, fTopAxis}, {mpsUpAxis, mpsUpAxis}})
+		fyi := tensor.Product(bufs[1], f, yi, [][2]int{{fBottomAxis, mpsLeftAxis}})
+		tensor.Product(f, xi.Conj(), fyi, [][2]int{{mpsLeftAxis, fTopAxis}, {mpsUpAxis, mpsUpAxis}})
 	}
 
 	if !slices.Equal(f.Shape(), []int{1, 1}) {
@@ -110,7 +112,9 @@ func InnerProduct(x, y []*tensor.Dense, bufs []*tensor.Dense) complex64 {
 	return f.At(0, 0)
 }
 
-func LExpressions(fs, ws, ms, bufs []*tensor.Dense) complex64 {
+// LExpressions returns the L expressions defined in Equation 192, Section 6.2 Applying a Hamiltonian MPO to a mixed canonical state, Ulrich Schollwock.
+// See Figure 38, Ulrich Schollwock for a graphical explanation.
+func LExpressions(fs, ws, ms []*tensor.Dense, bufs [2]*tensor.Dense) complex64 {
 	if len(fs) != len(ws) {
 		panic(fmt.Sprintf("%d %d", len(fs), len(ws)))
 	}
@@ -121,7 +125,7 @@ func LExpressions(fs, ws, ms, bufs []*tensor.Dense) complex64 {
 	fi1 := ones(fs[0], 1, 1, 1)
 	for i, w := range ws {
 		m := ms[i]
-		fi1 = lExpression(fs[i], fi1, w, m, bufs)
+		fi1 = lExpression(fs[i], fi1, w, m, bufs[:])
 	}
 
 	if !slices.Equal(fi1.Shape(), []int{1, 1, 1}) {
@@ -133,18 +137,20 @@ func LExpressions(fs, ws, ms, bufs []*tensor.Dense) complex64 {
 func lExpression(fi, fi1, w, m *tensor.Dense, bufs []*tensor.Dense) *tensor.Dense {
 	// fi1 is of shape {fTop, fMid, fBot}.
 	// fm is of shape {fTop, fMid, mpsTop, mpsRight}.
-	fm := tensor.Contract(bufs[0], fi1, m, [][2]int{{2, mpsLeftAxis}})
+	fm := tensor.Product(bufs[0], fi1, m, [][2]int{{2, mpsLeftAxis}})
 
 	// wfm is of shape {mpoRight, mpoUp, fTop, mpsRight}.
-	wfm := tensor.Contract(bufs[1], w, fm, [][2]int{{mpoDownAxis, 2}, {mpoLeftAxis, 1}})
+	wfm := tensor.Product(bufs[1], w, fm, [][2]int{{mpoDownAxis, 2}, {mpoLeftAxis, 1}})
 
 	// fi is of shape {mpsRight.conj, mpoRight, mpsRight}.
-	tensor.Contract(fi, m.Conj(), wfm, [][2]int{{mpsLeftAxis, 2}, {mpsUpAxis, 1}})
+	tensor.Product(fi, m.Conj(), wfm, [][2]int{{mpsLeftAxis, 2}, {mpsUpAxis, 1}})
 
 	return fi
 }
 
-func RExpressions(fs, ws, ms, bufs []*tensor.Dense) complex64 {
+// RExpressions returns the R expressions defined in Equation 193, Section 6.2 Applying a Hamiltonian MPO to a mixed canonical state, Ulrich Schollwock.
+// See Figure 38, Ulrich Schollwock for a graphical explanation.
+func RExpressions(fs, ws, ms []*tensor.Dense, bufs [2]*tensor.Dense) complex64 {
 	if len(fs) != len(ws) {
 		panic(fmt.Sprintf("%d %d", len(fs), len(ws)))
 	}
@@ -155,7 +161,7 @@ func RExpressions(fs, ws, ms, bufs []*tensor.Dense) complex64 {
 	fi1 := ones(fs[len(fs)-1], 1, 1, 1)
 	for i := len(fs) - 1; i >= 0; i-- {
 		w, m := ws[i], ms[i]
-		fi1 = rExpression(fs[i], fi1, w, m, bufs)
+		fi1 = rExpression(fs[i], fi1, w, m, bufs[:])
 	}
 
 	if !slices.Equal(fi1.Shape(), []int{1, 1, 1}) {
@@ -167,19 +173,20 @@ func RExpressions(fs, ws, ms, bufs []*tensor.Dense) complex64 {
 func rExpression(fi, fi1, w, m *tensor.Dense, bufs []*tensor.Dense) *tensor.Dense {
 	// fi1 is of shape {fTop, fMid, fBot}.
 	// fm is of shape {fTop, fMid, mpsLeft, mpsTop}.
-	fm := tensor.Contract(bufs[0], fi1, m, [][2]int{{2, mpsRightAxis}})
+	fm := tensor.Product(bufs[0], fi1, m, [][2]int{{2, mpsRightAxis}})
 
 	// wfm is of shape {mpoLeft, mpoUp, fTop, mpsLeft}.
-	wfm := tensor.Contract(bufs[1], w, fm, [][2]int{{mpoDownAxis, 3}, {mpoRightAxis, 1}})
+	wfm := tensor.Product(bufs[1], w, fm, [][2]int{{mpoDownAxis, 3}, {mpoRightAxis, 1}})
 
 	// fi is of shape {mpsLeft.conj, mpoLeft, mpsLeft}.
-	tensor.Contract(fi, m.Conj(), wfm, [][2]int{{mpsRightAxis, 2}, {mpsUpAxis, 1}})
+	tensor.Product(fi, m.Conj(), wfm, [][2]int{{mpsRightAxis, 2}, {mpsUpAxis, 1}})
 
 	return fi
 }
 
-// page 74.
-func H2(ws, ms, bufs []*tensor.Dense) complex64 {
+// H2 returns <psi|H^2|psi>.
+// See Figure 44, Section 6.4 Conventional DMRG in MPS language: the subtle differences, Ulrich Schollwock for a graphical explanation.
+func H2(ws, ms []*tensor.Dense, bufs [2]*tensor.Dense) complex64 {
 	if len(ws) != len(ms) {
 		panic(fmt.Sprintf("%d %d", len(ws), len(ms)))
 	}
@@ -190,16 +197,16 @@ func H2(ws, ms, bufs []*tensor.Dense) complex64 {
 		m := ms[i]
 
 		// fm is of shape {fTop, fMid2, fMid, mpsTop, mpsRight}.
-		fm := tensor.Contract(bufs[1], fi1, m, [][2]int{{3, mpsLeftAxis}})
+		fm := tensor.Product(bufs[1], fi1, m, [][2]int{{3, mpsLeftAxis}})
 
 		// wfm is of shape {mpoRight, mpoUp, fTop, fMid2, mpsRight}.
-		wfm := tensor.Contract(bufs[0], w, fm, [][2]int{{mpoDownAxis, 3}, {mpoLeftAxis, 2}})
+		wfm := tensor.Product(bufs[0], w, fm, [][2]int{{mpoDownAxis, 3}, {mpoLeftAxis, 2}})
 
 		// wwfm is of shape {mpoRight2, mpoUp2, mpoRight, fTop, mpsRight}.
-		wwfm := tensor.Contract(bufs[1], w, wfm, [][2]int{{mpoDownAxis, 1}, {mpoLeftAxis, 3}})
+		wwfm := tensor.Product(bufs[1], w, wfm, [][2]int{{mpoDownAxis, 1}, {mpoLeftAxis, 3}})
 
 		// fi1 is of shape {mpsRight.conj, mpoRight2, mpoRight, mpsRight}.
-		fi1 = tensor.Contract(bufs[0], m.Conj(), wwfm, [][2]int{{mpsLeftAxis, 3}, {mpsUpAxis, 1}})
+		fi1 = tensor.Product(bufs[0], m.Conj(), wwfm, [][2]int{{mpsLeftAxis, 3}, {mpsUpAxis, 1}})
 	}
 
 	if !slices.Equal(fi1.Shape(), []int{1, 1, 1, 1}) {
@@ -208,11 +215,13 @@ func H2(ws, ms, bufs []*tensor.Dense) complex64 {
 	return fi1.At(0, 0, 0, 0)
 }
 
+// SearchGroundStateOptions are options for the MPS ground state search algorithm.
 type SearchGroundStateOptions struct {
 	maxIterations int
 	tol           float32
 }
 
+// NewSearchGroundStateOptions returns the default MPS ground state search options.
 func NewSearchGroundStateOptions() SearchGroundStateOptions {
 	opt := SearchGroundStateOptions{}
 	opt.maxIterations = 32
@@ -220,24 +229,28 @@ func NewSearchGroundStateOptions() SearchGroundStateOptions {
 	return opt
 }
 
+// MaxIterations sets the maximum iterations.
 func (opt SearchGroundStateOptions) MaxIterations(i int) SearchGroundStateOptions {
 	opt.maxIterations = i
 	return opt
 }
 
+// Tol sets the tolerance of the convergence criterion <H^2> - (<H>)^2.
 func (opt SearchGroundStateOptions) Tol(tol float32) SearchGroundStateOptions {
 	opt.tol = tol
 	return opt
 }
 
-func SearchGroundState(fs, ws, ms, bufs []*tensor.Dense, options ...SearchGroundStateOptions) error {
+// SearchGroundState performs the MPS ground state search.
+// See Section 6.3 Iterative ground state search, Ulrich Schollwock.
+func SearchGroundState(fs, ws, ms []*tensor.Dense, bufs [10]*tensor.Dense, options ...SearchGroundStateOptions) error {
 	opt := NewSearchGroundStateOptions()
 	if len(options) > 0 {
 		opt = options[0]
 	}
 
-	rightNormalizeAll(ms, bufs)
-	RExpressions(fs, ws, ms, bufs)
+	rightNormalizeAll(ms, bufs[:3])
+	RExpressions(fs, ws, ms, [2]*tensor.Dense(bufs[:2]))
 	convergence := struct {
 		ok bool
 		h2 complex64
@@ -251,15 +264,16 @@ func SearchGroundState(fs, ws, ms, bufs []*tensor.Dense, options ...SearchGround
 		}
 
 		// Test for convergence.
-		psiIP := InnerProduct(ms, ms, bufs)
+		bufs2 := [2]*tensor.Dense(bufs[:2])
+		psiIP := InnerProduct(ms, ms, bufs2)
 		if abs(psiIP) < epsilon {
 			return errors.Errorf("%f", psiIP)
 		}
 		// Since leftSweep built R expression to fs[1], we need only further build fs[0].
-		rExpression(fs[0], fs[1], ws[0], ms[0], bufs)
+		rExpression(fs[0], fs[1], ws[0], ms[0], bufs[:])
 		h := fs[0].At(0, 0, 0) / psiIP
 		// Compute h2 and use the criterion h2 - h*h.
-		h2 := H2(ws, ms, bufs) / psiIP
+		h2 := H2(ws, ms, bufs2) / psiIP
 		convergence.h2 = h2 - h*h
 		if abs(convergence.h2) < opt.tol*max(abs(h2), 1) {
 			convergence.ok = true
@@ -272,7 +286,7 @@ func SearchGroundState(fs, ws, ms, bufs []*tensor.Dense, options ...SearchGround
 	return nil
 }
 
-func leftSweep(fs, ws, ms, bufs []*tensor.Dense) error {
+func leftSweep(fs, ws, ms []*tensor.Dense, bufs [10]*tensor.Dense) error {
 	for l := len(ms) - 1; l >= 1; l-- {
 		fRight := ones(fs[l], 1, 1, 1)
 		if l+1 <= len(ms)-1 {
@@ -281,22 +295,23 @@ func leftSweep(fs, ws, ms, bufs []*tensor.Dense) error {
 		h := getH(bufs[0], fs[l-1], fRight, ws[l], l, bufs[1:])
 
 		eigvals, eigvecs := bufs[1], bufs[2]
-		if err := tensor.Arnoldi(eigvals, eigvecs, h, 1, bufs[3:]); err != nil {
+		abufs := [7]*tensor.Dense(bufs[3:])
+		if err := tensor.Arnoldi(eigvals, eigvecs, h, 1, abufs); err != nil {
 			return errors.Wrap(err, "")
 		}
 		resetCopy(ms[l], eigvecs.Reshape(ms[l].Shape()...))
 
 		// Right normalize ms[l], and multiply into ms[l-1].
 		// Since ms[l-1] is modified, reset fs[l-1].
-		rightNormalize(ms, l, bufs)
+		rightNormalize(ms, l, bufs[:3])
 		fs[l-1].Reset(1)
 
-		rExpression(fs[l], fRight, ws[l], ms[l], bufs)
+		rExpression(fs[l], fRight, ws[l], ms[l], bufs[:2])
 	}
 	return nil
 }
 
-func rightSweep(fs, ws, ms, bufs []*tensor.Dense) error {
+func rightSweep(fs, ws, ms []*tensor.Dense, bufs [10]*tensor.Dense) error {
 	for l := range len(ms) - 1 {
 		fLeft := ones(fs[l], 1, 1, 1)
 		if l-1 >= 0 {
@@ -305,29 +320,34 @@ func rightSweep(fs, ws, ms, bufs []*tensor.Dense) error {
 		h := getH(bufs[0], fLeft, fs[l+1], ws[l], l, bufs[1:])
 
 		eigvals, eigvecs := bufs[1], bufs[2]
-		if err := tensor.Arnoldi(eigvals, eigvecs, h, 1, bufs[3:]); err != nil {
+		abufs := [7]*tensor.Dense(bufs[3:])
+		if err := tensor.Arnoldi(eigvals, eigvecs, h, 1, abufs); err != nil {
 			return errors.Wrap(err, "")
 		}
 		resetCopy(ms[l], eigvecs.Reshape(ms[l].Shape()...))
 
 		// Left normalize ms[l], and multiply into ms[l+1].
 		// Since ms[l+1] is modified, reset fs[l+1].
-		leftNormalize(ms, l, bufs)
+		// The reason why ms[:l-1] has to be left-normalized, and ms[l:] right-normalized at all times is because in this case,
+		// the generalized eigenvalue problem simplifies to the ordinary eigenvalue problem we are doing here.
+		// See Equation 211, Section 6.3 Iterative ground state search, Ulrich Schollwock.
+		leftNormalize(ms, l, bufs[:3])
 		fs[l+1].Reset(1)
 
-		lExpression(fs[l], fLeft, ws[l], ms[l], bufs)
+		lExpression(fs[l], fLeft, ws[l], ms[l], bufs[:2])
 	}
 	return nil
 }
 
+// getH returns the H matrix defined in Equation 210, Section 6.3 Iterative ground state search, Ulrich Schollwock.
 func getH(h, left, right, w *tensor.Dense, l int, bufs []*tensor.Dense) *tensor.Dense {
 	// right is of shape {rightTop, rightMid, rightBot}.
 	// wRight is of shape {mpoLeft, mpoUp, mpoDown, rightTop, rightBot}.
-	wRight := tensor.Contract(bufs[0], w, right, [][2]int{{mpoRightAxis, 1}})
+	wRight := tensor.Product(bufs[0], w, right, [][2]int{{mpoRightAxis, 1}})
 
 	// left is of shape {leftTop, leftMid, leftBot}.
 	// lwr is of shape {leftTop, leftBot, mpoUp, mpoDown, rightTop, rightBot}.
-	lwr := tensor.Contract(bufs[1], left, wRight, [][2]int{{1, 0}})
+	lwr := tensor.Product(bufs[1], left, wRight, [][2]int{{1, 0}})
 
 	// h is of shape {leftTop, mpoUp, rightTop, leftBot, mpoDown, rightBot}.
 	resetCopy(h, lwr.Transpose(0, 2, 4, 1, 3, 5))
@@ -347,19 +367,19 @@ func rightNormalizeAll(ms []*tensor.Dense, bufs []*tensor.Dense) {
 }
 
 // rightNormalize normalizes a MPS site from the right.
-// Consult Section 4.4.2 for details.
+// See Section 4.4.2 Generation of a right-canonical MPS, Ulrich Schollwock.
 func rightNormalize(ms []*tensor.Dense, i int, bufs []*tensor.Dense) {
 	s := ms[i].Shape()
 	dUp, dRight := s[mpsUpAxis], s[mpsRightAxis]
 
 	// Decompose ms[i] = l @ q.H.
 	mi := ms[i].Reshape(s[mpsLeftAxis], dUp*dRight)
-	q := bufs[0]
-	l := lq(q, mi, bufs[1:])
+	q, lqbufs := bufs[0], [2]*tensor.Dense(bufs[1:])
+	l := lq(q, mi, lqbufs)
 
 	// ms[i-1] = ms[i-1] @ l.
 	axes := [][2]int{{mpsRightAxis, 0}}
-	resetCopy(ms[i-1], tensor.Contract(bufs[1], ms[i-1], l, axes))
+	resetCopy(ms[i-1], tensor.Product(bufs[1], ms[i-1], l, axes))
 
 	// ms[i] = q.H.
 	ms[i] = resetCopy(ms[i], q.H()).Reshape(-1, dUp, dRight)
@@ -377,18 +397,18 @@ func leftNormalize(ms []*tensor.Dense, i int, bufs []*tensor.Dense) {
 
 	// Decompose ms[i] = q @ r.
 	mi := ms[i].Reshape(dLeft*dUp, s[mpsRightAxis])
-	q := bufs[0]
-	r := tensor.QR(q, mi, bufs[1:])
+	q, qrbufs := bufs[0], [2]*tensor.Dense(bufs[1:])
+	r := tensor.QR(q, mi, qrbufs)
 
 	// ms[i+1] = r @ ms[i+1].
 	axes := [][2]int{{1, mpsLeftAxis}}
-	resetCopy(ms[i+1], tensor.Contract(bufs[1], r, ms[i+1], axes))
+	resetCopy(ms[i+1], tensor.Product(bufs[1], r, ms[i+1], axes))
 
 	// ms[i] = q.
 	ms[i] = resetCopy(ms[i], q).Reshape(dLeft, dUp, -1)
 }
 
-func lq(q, a *tensor.Dense, bufs []*tensor.Dense) *tensor.Dense {
+func lq(q, a *tensor.Dense, bufs [2]*tensor.Dense) *tensor.Dense {
 	r := tensor.QR(q, a.H(), bufs)
 	return r.H()
 }
@@ -407,7 +427,7 @@ func product(p *tensor.Dense, ms []*tensor.Dense, buf *tensor.Dense) *tensor.Den
 			mmi = buf
 		}
 		axes := [][2]int{{len(mmiPrev.Shape()) - 1, 0}}
-		tensor.Contract(mmi, mmiPrev, mi, axes)
+		tensor.Product(mmi, mmiPrev, mi, axes)
 
 		mmiPrev = mmi
 	}
