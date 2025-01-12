@@ -10,10 +10,9 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/fumin/qising/mps"
+	"github.com/fumin/tensor"
 	"github.com/pkg/errors"
-
-	"qising/mps"
-	"qising/tensor"
 )
 
 var (
