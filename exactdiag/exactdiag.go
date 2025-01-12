@@ -11,9 +11,8 @@ import (
 	"slices"
 	"strconv"
 
+	"github.com/fumin/qising/exactdiag/mat"
 	"github.com/pkg/errors"
-
-	"qising/exactdiag/mat"
 )
 
 var (

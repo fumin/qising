@@ -13,10 +13,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/fumin/qising/exactdiag"
+	"github.com/fumin/qising/exactdiag/mat"
 	"github.com/pkg/errors"
-
-	"qising/exactdiag"
-	"qising/exactdiag/mat"
 )
 
 const (

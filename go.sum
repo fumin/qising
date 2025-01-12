@@ -1,3 +1,5 @@
+github.com/fumin/tensor v0.0.0-20251023104438-dcd718bdbc09 h1:kjBWthSrKbRa9s4HvkKJqtL0vrR+EXSkzwvsRLCqjZc=
+github.com/fumin/tensor v0.0.0-20251023104438-dcd718bdbc09/go.mod h1:kPIu4TDISF+RWs6FGoBG5pDAXXPMAAuIt6sw/8rvRA4=
 github.com/mattn/go-sqlite3 v1.14.24 h1:tpSp2G2KyMnnQu99ngJ47EIkWVmliIizyZBfPrBWDRM=
 github.com/mattn/go-sqlite3 v1.14.24/go.mod h1:Uh1q+B4BYcTPb+yiD3kU8Ct7aC0hY9fxUwlHK0RXw+Y=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
